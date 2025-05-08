@@ -1,0 +1,191 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:latest
+    env_file:
+      - postgres.env
+    volumes:
+      - /vagrant/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    expose:
+      - 5432
+    networks:
+      - overlay_network
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine 
+    env_file:
+      - rabbitmq.env
+    expose:
+      - 5672
+    networks:
+      - overlay_network
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+
+  session-service:
+    image: realdam1en/session-service:latest
+    env_file:
+      - postgres.env
+    environment:
+      - POSTGRES_DB=users_db
+    networks:
+      - overlay_network
+    expose:
+      - 8081
+    depends_on:
+      - postgres
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == worker]
+
+  hotel-service:
+    image: realdam1en/hotel-service:latest
+    env_file:
+      - postgres.env
+    environment:
+      - POSTGRES_DB=hotels_db
+    networks:
+      - overlay_network
+    depends_on:
+      - postgres
+    expose:
+      - 8082
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == worker]
+
+  booking-service:
+    image: realdam1en/booking-service:latest
+    env_file:
+      - postgres.env
+      - rabbitmq.env
+      - services.env
+    environment:
+      - POSTGRES_DB=reservations_db
+    networks:
+      - overlay_network
+    depends_on:
+      - postgres
+      - rabbitmq
+      - hotel-service
+      - payment-service
+      - loyalty-service
+    expose:
+      - 8083
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == worker]
+
+  payment-service:
+    image: realdam1en/payment-service:latest
+    env_file:
+      - postgres.env
+    environment:
+      - POSTGRES_DB=payments_db
+    networks:
+      - overlay_network
+    depends_on:
+      - postgres
+    expose:
+      - 8084
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == worker]
+
+  loyalty-service:
+    image: realdam1en/loyalty-service:latest
+    env_file:
+      - postgres.env
+    environment:
+      - POSTGRES_DB=balances_db
+    networks:
+      - overlay_network
+    expose:
+      - 8085
+    depends_on:
+      - postgres
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == worker]
+
+  report-service:
+    image: realdam1en/report-service:latest
+    env_file:
+      - postgres.env
+      - rabbitmq.env
+    environment:
+      - POSTGRES_DB=statistics_db
+    networks:
+      - overlay_network
+    expose:
+      - 8086
+    depends_on:
+      - postgres
+      - rabbitmq
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == worker]
+
+  gateway-service:
+    image: realdam1en/gateway-service:latest
+    env_file:
+      - services.env
+    expose:
+      - 8087
+    networks:
+      - overlay_network
+    depends_on:
+      - session-service
+      - hotel-service
+      - booking-service
+      - payment-service
+      - loyalty-service
+      - report-service
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == worker]
+
+  nginx:
+    image: nginx:latest
+    volumes:
+      - /vagrant/nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      - overlay_network
+    ports:
+      - 8081:8081
+      - 8087:8087
+    depends_on:
+      - session-service
+      - gateway-service
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+
+networks:
+  overlay_network:
+    external: true

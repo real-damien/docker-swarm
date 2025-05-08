@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:latest
+    env_file:
+      - postgres.env
+    volumes:
+      - ./src/services/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    expose:
+      - 5432
+  
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine 
+    env_file:
+      - rabbitmq.env
+    expose:
+      - 5672
+
+  session-service:
+    image: session-service:latest
+    env_file:
+      - postgres.env
+    environment:
+      - POSTGRES_DB=users_db
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+
+  hotel-service:
+    image: hotel-service:latest
+    env_file:
+      - postgres.env
+    environment:
+      - POSTGRES_DB=hotels_db
+    expose:
+      - 8082
+    depends_on:
+      - postgres
+
+  booking-service:
+    image: booking-service:latest
+    env_file:
+      - postgres.env
+      - rabbitmq.env
+      - services.env
+    environment:
+      - POSTGRES_DB=reservations_db
+    expose:
+      - 8083
+    depends_on:
+      - postgres
+      - rabbitmq
+      - hotel-service
+      - payment-service
+      - loyalty-service
+
+  payment-service:
+    image: payment-service:latest
+    env_file:
+      - postgres.env
+    environment:
+      - POSTGRES_DB=payments_db
+    expose:
+      - 8084
+    depends_on:
+      - postgres
+
+  loyalty-service:
+    image: loyalty-service:latest
+    env_file:
+      - postgres.env
+    environment:
+      - POSTGRES_DB=balances_db
+    expose:
+      - 8085
+    depends_on:
+      - postgres
+
+  report-service:
+    image: report-service:latest
+    env_file:
+      - postgres.env
+      - rabbitmq.env
+    environment:
+      - POSTGRES_DB=statistics_db
+    expose:
+      - 8086
+    depends_on:
+      - postgres
+      - rabbitmq
+
+
+  gateway-service:
+    image: gateway-service:latest
+    env_file:
+      - services.env
+    ports:
+      - "8087:8087"
+    depends_on:
+      - session-service
+      - hotel-service
+      - booking-service
+      - payment-service
+      - loyalty-service
+      - report-service
